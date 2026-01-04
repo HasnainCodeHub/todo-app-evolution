@@ -264,9 +264,10 @@ Wait for consent; never auto-create ADRs. Group related decisions (stacks, authe
 See `.specify/memory/constitution.md` for code quality, testing, performance, security, and architecture principles.
 
 ## Recent Changes
+- 006-frontend-integration: Added TypeScript 5.6+ + Next.js 14+ (App Router), Better Auth, Tailwind CSS, React 18+
+- 005-auth-integration: Added Python 3.13+ + FastAPI, SQLModel, PyJWT[crypto] (new)
 - 004-backend-rest-api: Added Python 3.13+ + FastAPI, Pydantic (via SQLModel), uvicorn
-- 001-cli-task-crud: Added [if applicable, e.g., PostgreSQL, CoreData, files or N/A]
 
 ## Active Technologies
-- Python 3.13+ + FastAPI, Pydantic (via SQLModel), uvicorn (004-backend-rest-api)
-- Neon Serverless PostgreSQL (via Phase 2.1 database layer) (004-backend-rest-api)
+- TypeScript 5.6+ + Next.js 14+ (App Router), Better Auth, Tailwind CSS, React 18+ (006-frontend-integration)
+- No frontend storage (all data persists on backend) (006-frontend-integration)

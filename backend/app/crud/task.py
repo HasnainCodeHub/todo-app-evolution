@@ -9,13 +9,31 @@ from sqlmodel import Session, select
 
 from ..database import get_session
 from ..models import Task
+from ..schemas import TaskResponse
+
+
+def _task_to_response(task: Task) -> TaskResponse:
+    """
+    Convert ORM Task to Pydantic TaskResponse.
+
+    MUST be called while session is still active to avoid DetachedInstanceError.
+    """
+    return TaskResponse(
+        id=task.id,
+        user_id=task.user_id,
+        title=task.title,
+        description=task.description,
+        completed=task.completed,
+        created_at=task.created_at,
+        updated_at=task.updated_at,
+    )
 
 
 def create_task(
     title: str,
     user_id: str,
     description: Optional[str] = None,
-) -> Task:
+) -> TaskResponse:
     """
     Create a new task for a user.
 
@@ -28,7 +46,7 @@ def create_task(
         description: Optional task description
 
     Returns:
-        The created Task with auto-generated ID and timestamps
+        The created Task as TaskResponse (serialization-safe)
     """
     task = Task(
         title=title,
@@ -41,10 +59,31 @@ def create_task(
         session.add(task)
         session.commit()
         session.refresh(task)
-        return task
+        # Convert to Pydantic model INSIDE session to avoid DetachedInstanceError
+        return _task_to_response(task)
 
 
-def get_task(task_id: int, user_id: Optional[str] = None) -> Optional[Task]:
+def task_exists_any_user(task_id: int) -> bool:
+    """
+    Check if a task exists, regardless of user ownership.
+
+    Implements US3: Cross-User Access Prevention - supports 403 vs 404 distinction.
+
+    Task ID: T017
+
+    Args:
+        task_id: The task ID to check
+
+    Returns:
+        True if task exists in database, False otherwise
+    """
+    with get_session() as session:
+        statement = select(Task).where(Task.id == task_id)
+        result = session.exec(statement).first()
+        return result is not None
+
+
+def get_task(task_id: int, user_id: Optional[str] = None) -> Optional[TaskResponse]:
     """
     Retrieve a single task by ID.
 
@@ -55,7 +94,7 @@ def get_task(task_id: int, user_id: Optional[str] = None) -> Optional[Task]:
         user_id: Optional user_id for ownership filtering
 
     Returns:
-        The Task if found, None otherwise
+        The TaskResponse if found, None otherwise
     """
     with get_session() as session:
         statement = select(Task).where(Task.id == task_id)
@@ -65,10 +104,13 @@ def get_task(task_id: int, user_id: Optional[str] = None) -> Optional[Task]:
             statement = statement.where(Task.user_id == user_id)
 
         result = session.exec(statement).first()
-        return result
+        if result is None:
+            return None
+        # Convert to Pydantic model INSIDE session
+        return _task_to_response(result)
 
 
-def get_tasks(user_id: Optional[str] = None) -> list[Task]:
+def get_tasks(user_id: Optional[str] = None) -> list[TaskResponse]:
     """
     Retrieve all tasks, optionally filtered by user_id.
 
@@ -80,7 +122,7 @@ def get_tasks(user_id: Optional[str] = None) -> list[Task]:
                  If None, returns all tasks (admin/debug use case).
 
     Returns:
-        List of tasks matching the criteria
+        List of TaskResponse objects (serialization-safe)
     """
     with get_session() as session:
         statement = select(Task).order_by(Task.created_at.desc())
@@ -90,7 +132,8 @@ def get_tasks(user_id: Optional[str] = None) -> list[Task]:
             statement = statement.where(Task.user_id == user_id)
 
         results = session.exec(statement).all()
-        return list(results)
+        # Convert ALL tasks to Pydantic models INSIDE session
+        return [_task_to_response(task) for task in results]
 
 
 def update_task(
@@ -98,7 +141,8 @@ def update_task(
     user_id: str,
     title: Optional[str] = None,
     description: Optional[str] = None,
-) -> Optional[Task]:
+    completed: Optional[bool] = None,
+) -> Optional[TaskResponse]:
     """
     Update an existing task's properties.
 
@@ -109,9 +153,10 @@ def update_task(
         user_id: Owner identifier (for ownership verification)
         title: New title (optional, only updates if provided)
         description: New description (optional, only updates if provided)
+        completed: New completed status (optional, only updates if provided)
 
     Returns:
-        The updated Task if found and owned by user, None otherwise
+        The updated TaskResponse if found and owned by user, None otherwise
     """
     with get_session() as session:
         # Find task with user scoping
@@ -129,6 +174,8 @@ def update_task(
             task.title = title
         if description is not None:
             task.description = description
+        if completed is not None:
+            task.completed = completed
 
         # Update timestamp
         task.updated_at = datetime.now(timezone.utc)
@@ -136,7 +183,8 @@ def update_task(
         session.add(task)
         session.commit()
         session.refresh(task)
-        return task
+        # Convert to Pydantic model INSIDE session
+        return _task_to_response(task)
 
 
 def delete_task(task_id: int, user_id: str) -> bool:
@@ -168,7 +216,7 @@ def delete_task(task_id: int, user_id: str) -> bool:
         return True
 
 
-def toggle_complete(task_id: int, user_id: str) -> Optional[Task]:
+def toggle_complete(task_id: int, user_id: str) -> Optional[TaskResponse]:
     """
     Toggle the completed status of a task.
 
@@ -179,7 +227,7 @@ def toggle_complete(task_id: int, user_id: str) -> Optional[Task]:
         user_id: Owner identifier (for ownership verification)
 
     Returns:
-        The updated Task if found and owned by user, None otherwise
+        The updated TaskResponse if found and owned by user, None otherwise
     """
     with get_session() as session:
         # Find task with user scoping
@@ -201,4 +249,5 @@ def toggle_complete(task_id: int, user_id: str) -> Optional[Task]:
         session.add(task)
         session.commit()
         session.refresh(task)
-        return task
+        # Convert to Pydantic model INSIDE session
+        return _task_to_response(task)

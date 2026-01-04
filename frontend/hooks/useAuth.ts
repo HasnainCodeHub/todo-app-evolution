@@ -1,0 +1,235 @@
+// Authentication Hook for Phase 2.4
+// Integrates Better Auth with JWT token generation for backend API calls
+
+import { useState, useEffect, useCallback } from 'react'
+import { authClient } from '../lib/auth/auth-client'
+
+export interface User {
+  id: string
+  email: string
+  name?: string
+}
+
+export interface AuthState {
+  isAuthenticated: boolean
+  user: User | null
+  token: string | null
+  isLoading: boolean
+  error: string | null
+}
+
+// Token storage key
+const TOKEN_STORAGE_KEY = 'todo_auth_token'
+const USER_STORAGE_KEY = 'todo_auth_user'
+
+export function useAuth() {
+  const [authState, setAuthState] = useState<AuthState>({
+    isAuthenticated: false,
+    user: null,
+    token: null,
+    isLoading: true, // Start with loading to check stored session
+    error: null,
+  })
+
+  // Restore session from storage on mount
+  // CRITICAL: Verify session with Better Auth, don't just trust localStorage
+  useEffect(() => {
+    const restoreSession = async () => {
+      try {
+        // First check localStorage for existing session
+        const storedToken = localStorage.getItem(TOKEN_STORAGE_KEY)
+        const storedUser = localStorage.getItem(USER_STORAGE_KEY)
+
+        if (storedToken && storedUser) {
+          // Verify session is still valid by requesting a fresh JWT
+          // This checks the Better Auth session cookie
+          const jwtResponse = await fetch('/api/auth/jwt')
+
+          if (jwtResponse.ok) {
+            // Session is valid - use fresh token
+            const jwtData = await jwtResponse.json()
+            const user = JSON.parse(storedUser)
+
+            // Update token if a fresh one was provided
+            if (jwtData.token) {
+              localStorage.setItem(TOKEN_STORAGE_KEY, jwtData.token)
+            }
+
+            setAuthState({
+              isAuthenticated: true,
+              user: jwtData.user || user,
+              token: jwtData.token || storedToken,
+              isLoading: false,
+              error: null,
+            })
+          } else {
+            // Session expired or invalid - clear localStorage
+            localStorage.removeItem(TOKEN_STORAGE_KEY)
+            localStorage.removeItem(USER_STORAGE_KEY)
+            setAuthState(prev => ({ ...prev, isLoading: false }))
+          }
+        } else {
+          // No stored session - check if Better Auth has a valid session
+          // (user might have session cookie but no localStorage)
+          try {
+            const jwtResponse = await fetch('/api/auth/jwt')
+            if (jwtResponse.ok) {
+              const jwtData = await jwtResponse.json()
+              if (jwtData.token && jwtData.user) {
+                // Valid session exists - restore it
+                localStorage.setItem(TOKEN_STORAGE_KEY, jwtData.token)
+                localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(jwtData.user))
+
+                setAuthState({
+                  isAuthenticated: true,
+                  user: jwtData.user,
+                  token: jwtData.token,
+                  isLoading: false,
+                  error: null,
+                })
+                return
+              }
+            }
+          } catch {
+            // No valid session - continue as unauthenticated
+          }
+          setAuthState(prev => ({ ...prev, isLoading: false }))
+        }
+      } catch {
+        // Clear invalid stored data
+        localStorage.removeItem(TOKEN_STORAGE_KEY)
+        localStorage.removeItem(USER_STORAGE_KEY)
+        setAuthState(prev => ({ ...prev, isLoading: false }))
+      }
+    }
+
+    restoreSession()
+  }, [])
+
+  const signIn = useCallback(async (email: string, password: string, isSignUp: boolean = false) => {
+    setAuthState(prev => ({ ...prev, isLoading: true, error: null }))
+
+    try {
+      let result
+
+      if (isSignUp) {
+        // Sign up flow
+        result = await authClient.signUp.email({
+          email,
+          password,
+          name: email.split('@')[0], // Use email prefix as name
+        })
+      } else {
+        // Sign in flow
+        result = await authClient.signIn.email({
+          email,
+          password,
+        })
+      }
+
+      if (result.error) {
+        throw new Error(result.error.message || 'Authentication failed')
+      }
+
+      // Better Auth returns user data in the response
+      const userData = result.data?.user || result.data
+
+      if (!userData) {
+        throw new Error('No user data returned from authentication')
+      }
+
+      const user: User = {
+        id: userData.id,
+        email: userData.email,
+        name: userData.name,
+      }
+
+      // Generate JWT token for backend API calls via API endpoint
+      const jwtResponse = await fetch('/api/auth/jwt')
+      if (!jwtResponse.ok) {
+        throw new Error('Failed to generate JWT token')
+      }
+
+      const jwtData = await jwtResponse.json()
+      const token = jwtData.token
+
+      // Store session
+      localStorage.setItem(TOKEN_STORAGE_KEY, token)
+      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user))
+
+      setAuthState({
+        isAuthenticated: true,
+        user,
+        token,
+        isLoading: false,
+        error: null,
+      })
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Authentication failed'
+      setAuthState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: errorMessage,
+      }))
+      throw err
+    }
+  }, [])
+
+  const signOut = useCallback(async () => {
+    try {
+      // Sign out from Better Auth
+      await authClient.signOut()
+    } catch {
+      // Continue with local sign out even if Better Auth fails
+    }
+
+    // Clear local storage
+    localStorage.removeItem(TOKEN_STORAGE_KEY)
+    localStorage.removeItem(USER_STORAGE_KEY)
+
+    // Reset state
+    setAuthState({
+      isAuthenticated: false,
+      user: null,
+      token: null,
+      isLoading: false,
+      error: null,
+    })
+
+    // Redirect to home page
+    if (typeof window !== 'undefined') {
+      window.location.href = '/'
+    }
+  }, [])
+
+  const refresh = useCallback(async () => {
+    // Regenerate token if user is authenticated
+    if (authState.user) {
+      try {
+        const jwtResponse = await fetch('/api/auth/jwt')
+        if (!jwtResponse.ok) {
+          throw new Error('Failed to refresh JWT token')
+        }
+
+        const jwtData = await jwtResponse.json()
+        const token = jwtData.token
+
+        localStorage.setItem(TOKEN_STORAGE_KEY, token)
+
+        setAuthState(prev => ({
+          ...prev,
+          token,
+        }))
+      } catch (err) {
+        console.error('Token refresh failed:', err)
+      }
+    }
+  }, [authState.user])
+
+  return {
+    authState,
+    signIn,
+    signOut,
+    refresh,
+  }
+}

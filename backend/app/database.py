@@ -2,12 +2,15 @@
 # Phase 2.1: Database Persistence Layer
 # Task ID: T006-T008 (Foundational), T022-T024 (US4: Connection Management)
 
+import logging
 from contextlib import contextmanager
 from typing import Generator
 
 from sqlmodel import Session, SQLModel, create_engine
 
 from .config import get_settings
+
+logger = logging.getLogger(__name__)
 
 # Global engine instance - created once, shared across the application
 _engine = None
@@ -80,8 +83,11 @@ def init_db() -> None:
 
     Note: This does NOT use migrations (FR-017 constraint).
     """
+    logger.info("  → Importing database models...")
     # Import models to ensure they're registered with SQLModel metadata
     from .models import Task  # noqa: F401
 
+    logger.info("  → Creating database tables...")
     engine = get_engine()
     SQLModel.metadata.create_all(engine)
+    logger.info(f"  → Tables in metadata: {list(SQLModel.metadata.tables.keys())}")
