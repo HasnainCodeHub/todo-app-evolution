@@ -13,17 +13,18 @@ function getAuthClient() {
   }
 
   // Determine the base URL for Better Auth
+  // Priority: explicit env var > Vercel URL > current origin (client) > localhost (server)
   let baseURL: string
 
   // Check explicit environment variable first
   if (process.env.NEXT_PUBLIC_AUTH_URL) {
     baseURL = process.env.NEXT_PUBLIC_AUTH_URL
-  } else if (typeof window !== 'undefined') {
-    // On client-side, use current origin for same-domain auth
-    baseURL = window.location.origin
   } else if (process.env.VERCEL_URL) {
     // Server-side: use Vercel URL if available
     baseURL = `https://${process.env.VERCEL_URL}`
+  } else if (typeof window !== 'undefined') {
+    // On client-side, always use current origin for same-domain auth
+    baseURL = window.location.origin
   } else {
     // Default to localhost for development
     baseURL = 'http://localhost:3000'
