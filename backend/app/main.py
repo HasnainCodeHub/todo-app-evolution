@@ -27,7 +27,7 @@ app.add_middleware(
         "http://localhost:3000",  # Next.js dev server
         "http://127.0.0.1:3000",
         "https://frontend-gamma-three-88.vercel.app",  # Vercel frontend production
-        "https://evaluation-todo.vercel.app",  # Backend itself (for health checks)
+        "https://todo-backend-xi-eosin.vercel.app",  # Backend itself (for health checks)
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
