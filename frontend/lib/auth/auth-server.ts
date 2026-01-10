@@ -44,9 +44,9 @@ export const auth = betterAuth({
   baseURL,
   trustedOrigins: [
     'http://localhost:3000',
-    'https://todo-evolution-liart.vercel.app',
+    'https://frontend-gamma-three-88.vercel.app',
     // Include the current base URL if it's not already listed
-    ...(baseURL !== 'http://localhost:3000' && !baseURL.includes('todo-evolution-liart.vercel.app') ? [baseURL] : []),
+    ...(baseURL !== 'http://localhost:3000' && !baseURL.includes('frontend-gamma-three-88.vercel.app') ? [baseURL] : []),
   ],
 })
 
