@@ -26,7 +26,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",  # Next.js dev server
         "http://127.0.0.1:3000",
-        "https://frontend-hasnain-ali204.vercel.app",  # Vercel frontend production
+        "https://frontend-gamma-three-88.vercel.app",  # Vercel frontend production
         "https://evaluation-todo.vercel.app",  # Backend itself (for health checks)
     ],
     allow_credentials=True,
