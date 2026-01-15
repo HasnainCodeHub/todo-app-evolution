@@ -13,19 +13,14 @@ if (!process.env.BETTER_AUTH_SECRET) {
   throw new Error('BETTER_AUTH_SECRET is required')
 }
 
-// Determine base URL for Better Auth
-// Priority: explicit env var > Vercel URL > localhost
-function getServerBaseURL(): string {
-  if (process.env.BETTER_AUTH_URL) {
-    return process.env.BETTER_AUTH_URL
-  }
-  if (process.env.VERCEL_URL) {
-    return `https://${process.env.VERCEL_URL}`
-  }
-  return 'http://localhost:3000'
-}
+// Production origin - HARDCODED for stability
+const PRODUCTION_ORIGIN = 'https://todo-app-evolution-nine.vercel.app'
 
-const baseURL = getServerBaseURL()
+// Determine if we're in production
+const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1'
+
+// Base URL: use production origin in production, localhost in development
+const baseURL = isProduction ? PRODUCTION_ORIGIN : 'http://localhost:3000'
 
 export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
@@ -42,12 +37,19 @@ export const auth = betterAuth({
     requireEmailVerification: false,
   },
   baseURL,
+  // Trusted origins - ONLY production and localhost, no dynamic URLs
   trustedOrigins: [
+    'https://todo-app-evolution-nine.vercel.app',
     'http://localhost:3000',
-    'https://frontend-gamma-three-88.vercel.app',
-    // Include the current base URL if it's not already listed
-    ...(baseURL !== 'http://localhost:3000' && !baseURL.includes('frontend-gamma-three-88.vercel.app') ? [baseURL] : []),
   ],
+  advanced: {
+    useSecureCookies: isProduction,
+  },
+  session: {
+    cookieCache: {
+      enabled: false,
+    },
+  },
 })
 
 // Note: JWT tokens for API authentication are generated via /api/auth/jwt endpoint

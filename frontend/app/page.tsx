@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Navbar } from '../components/ui/Navbar'
 import { Footer } from '../components/ui/Footer'
-import { useAuthContext } from '../components/auth/AuthProvider'
+import { useSession } from '../lib/auth/auth-client'
 
 // Animated counter component
 function AnimatedCounter({ end, duration = 2000, suffix = '' }: { end: number; duration?: number; suffix?: string }) {
@@ -123,7 +123,7 @@ const stats = [
 
 export default function HomePage() {
   const router = useRouter()
-  const auth = useAuthContext()
+  const { data: session, isPending } = useSession()
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
@@ -131,11 +131,12 @@ export default function HomePage() {
   }, [])
 
   // Redirect authenticated users to dashboard
+  // Only redirect after session is loaded (not pending) and user exists
   useEffect(() => {
-    if (auth.authState.isAuthenticated) {
+    if (!isPending && session?.user) {
       router.push('/dashboard')
     }
-  }, [auth.authState.isAuthenticated, router])
+  }, [isPending, session?.user, router])
 
   return (
     <main className="min-h-screen bg-surface-50 overflow-hidden">

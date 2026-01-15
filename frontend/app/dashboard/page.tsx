@@ -1,13 +1,16 @@
 'use client'
 
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { useAuthContext } from '../../components/auth/AuthProvider'
+import { useSession, signOut } from '../../lib/auth/auth-client'
 import { useTasks } from '../../hooks/useTasks'
 import TaskForm from '../../components/tasks/TaskForm'
 import TaskList from '../../components/tasks/TaskList'
 import { TaskListSkeleton, StatCardSkeleton } from '../../components/ui/Skeleton'
+
+// Token storage key for backend API calls
+const TOKEN_STORAGE_KEY = 'todo_auth_token'
 
 // Progress ring component
 function ProgressRing({ progress, size = 80, strokeWidth = 8 }: { progress: number; size?: number; strokeWidth?: number }) {
@@ -60,12 +63,13 @@ type FilterType = 'all' | 'pending' | 'completed'
 
 export default function DashboardPage() {
   const router = useRouter()
-  const auth = useAuthContext()
+  const { data: session, isPending } = useSession()
   const tasks = useTasks()
   const [mounted, setMounted] = useState(false)
   const [filter, setFilter] = useState<FilterType>('all')
   const [showWelcome, setShowWelcome] = useState(true)
   const hasRedirected = useRef(false)
+  const hasInitialized = useRef(false)
 
   useEffect(() => {
     setMounted(true)
@@ -74,30 +78,58 @@ export default function DashboardPage() {
     return () => clearTimeout(timer)
   }, [])
 
-  // Redirect to signin if not authenticated (only after auth state resolves)
-  // Use ref to prevent multiple redirect attempts
+  // Redirect to signin if not authenticated (only after session resolves)
   useEffect(() => {
-    if (!auth.authState.isLoading && !auth.authState.isAuthenticated && !hasRedirected.current) {
+    if (!isPending && !session?.user && !hasRedirected.current) {
       hasRedirected.current = true
       router.push('/signin')
     }
-  }, [auth.authState.isLoading, auth.authState.isAuthenticated, router])
+  }, [isPending, session?.user, router])
 
-  // Load tasks on mount
-  useEffect(() => {
-    if (auth.authState.isAuthenticated) {
-      tasks.refresh()
+  // Initialize JWT token for backend API calls when session is available
+  const initializeToken = useCallback(async () => {
+    if (hasInitialized.current || !session?.user) return
+    hasInitialized.current = true
+
+    try {
+      // Fetch JWT token for backend API calls
+      const jwtResponse = await fetch('/api/auth/jwt', {
+        credentials: 'include',
+      })
+      if (jwtResponse.ok) {
+        const jwtData = await jwtResponse.json()
+        if (jwtData.token) {
+          localStorage.setItem(TOKEN_STORAGE_KEY, jwtData.token)
+          // Refresh tasks after token is set
+          tasks.refresh()
+        }
+      }
+    } catch (error) {
+      console.error('Failed to initialize token:', error)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auth.authState.isAuthenticated])
+  }, [session?.user, tasks])
 
-  const handleSignOut = () => {
-    auth.signOut()
+  // Load tasks when session is authenticated
+  useEffect(() => {
+    if (session?.user) {
+      initializeToken()
+    }
+  }, [session?.user, initializeToken])
+
+  const handleSignOut = async () => {
+    // Clear local token
+    localStorage.removeItem(TOKEN_STORAGE_KEY)
+    localStorage.removeItem('todo_auth_user')
+
+    // Sign out from Better Auth
+    await signOut()
+
+    // Navigate to home
     router.push('/')
   }
 
-  // Show loading state while auth is resolving
-  if (auth.authState.isLoading) {
+  // Show loading state while session is resolving
+  if (isPending) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-surface-50 via-white to-surface-50">
         <div className="text-center">
@@ -109,7 +141,7 @@ export default function DashboardPage() {
   }
 
   // Show redirecting state for unauthenticated users
-  if (!auth.authState.isAuthenticated) {
+  if (!session?.user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-surface-50 via-white to-surface-50">
         <div className="text-center">
@@ -141,6 +173,9 @@ export default function DashboardPage() {
     return 'Good evening'
   }
 
+  // Get user info from session
+  const user = session.user
+
   return (
     <main className="min-h-screen bg-gradient-to-br from-surface-50 via-white to-surface-50">
       {/* Header */}
@@ -167,11 +202,11 @@ export default function DashboardPage() {
               {/* User info */}
               <div className="hidden md:flex items-center gap-3 px-4 py-2 bg-surface-50 rounded-xl">
                 <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary-400 to-accent-400 flex items-center justify-center text-white font-semibold text-sm shadow-sm">
-                  {auth.authState.user?.name?.charAt(0).toUpperCase() || 'U'}
+                  {user?.name?.charAt(0).toUpperCase() || 'U'}
                 </div>
                 <div className="text-left">
-                  <p className="text-sm font-semibold text-surface-900 leading-tight">{auth.authState.user?.name || 'User'}</p>
-                  <p className="text-xs text-surface-500">{auth.authState.user?.email}</p>
+                  <p className="text-sm font-semibold text-surface-900 leading-tight">{user?.name || 'User'}</p>
+                  <p className="text-xs text-surface-500">{user?.email}</p>
                 </div>
               </div>
 
@@ -197,7 +232,7 @@ export default function DashboardPage() {
           <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
             <div>
               <h1 className="font-display text-3xl lg:text-4xl font-bold text-surface-900 mb-2">
-                {getGreeting()}, <span className="gradient-text">{auth.authState.user?.name?.split(' ')[0] || 'User'}</span>
+                {getGreeting()}, <span className="gradient-text">{user?.name?.split(' ')[0] || 'User'}</span>
               </h1>
               <p className="text-surface-600 text-lg">
                 {totalTasks === 0

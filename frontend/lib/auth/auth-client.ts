@@ -4,61 +4,42 @@
 
 import { createAuthClient } from 'better-auth/react'
 
-// Lazy-initialized auth client to ensure it uses correct URLs on client-side
-let _authClient: ReturnType<typeof createAuthClient> | null = null
+// Production origin - HARDCODED for stability
+const PRODUCTION_ORIGIN = 'https://todo-app-evolution-nine.vercel.app'
 
-function getAuthClient() {
-  if (_authClient) {
-    return _authClient
+// Create auth client with proper URL detection
+function getBaseURL(): string {
+  // On client-side, use current origin for same-domain auth
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname
+    // Use localhost in development
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return 'http://localhost:3000'
+    }
+    // In production, use current origin (should match PRODUCTION_ORIGIN)
+    return window.location.origin
   }
 
-  // Determine the base URL for Better Auth
-  // Priority: explicit env var > Vercel URL > current origin (client) > localhost (server)
-  let baseURL: string
-
-  // Check explicit environment variable first
-  if (process.env.NEXT_PUBLIC_AUTH_URL) {
-    baseURL = process.env.NEXT_PUBLIC_AUTH_URL
-  } else if (process.env.VERCEL_URL) {
-    // Server-side: use Vercel URL if available
-    baseURL = `https://${process.env.VERCEL_URL}`
-  } else if (typeof window !== 'undefined') {
-    // On client-side, always use current origin for same-domain auth
-    baseURL = window.location.origin
-  } else {
-    // Default to localhost for development
-    baseURL = 'http://localhost:3000'
+  // Server-side: detect production via environment
+  if (process.env.NODE_ENV === 'production' || process.env.VERCEL === '1') {
+    return PRODUCTION_ORIGIN
   }
 
-  _authClient = createAuthClient({ baseURL })
-  return _authClient
+  // Default to localhost for development
+  return 'http://localhost:3000'
 }
 
-// Create Better Auth client proxy that ensures lazy initialization
-// This ensures the client is created with the correct URL on the client-side
-export const authClient = {
-  get signIn() {
-    return getAuthClient().signIn
-  },
-  get signUp() {
-    return getAuthClient().signUp
-  },
-  get signOut() {
-    return getAuthClient().signOut
-  },
-  get useSession() {
-    return getAuthClient().useSession
-  },
-  get getSession() {
-    return getAuthClient().getSession
-  },
-}
+// Create the auth client
+const _authClient = createAuthClient({
+  baseURL: getBaseURL(),
+})
 
-// Export typed methods
-export const {
-  signIn,
-  signUp,
-  signOut,
-  useSession,
-  getSession
-} = authClient
+// Export the client and its methods
+export const authClient = _authClient
+
+// Export typed methods directly
+export const signIn = _authClient.signIn
+export const signUp = _authClient.signUp
+export const signOut = _authClient.signOut
+export const useSession = _authClient.useSession
+export const getSession = _authClient.getSession

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { useAuthContext } from '../../components/auth/AuthProvider'
+import { useSession, signIn, signUp } from '../../lib/auth/auth-client'
 
 function SignInForm() {
   const router = useRouter()
@@ -19,20 +19,19 @@ function SignInForm() {
   const [isRedirecting, setIsRedirecting] = useState(false)
   const hasRedirected = useRef(false)
 
-  const auth = useAuthContext()
-  const { authState } = auth
+  const { data: session, isPending } = useSession()
 
-  // Handle redirect for authenticated users - use useEffect to avoid render-loop
+  // Handle redirect for authenticated users
   useEffect(() => {
-    if (!authState.isLoading && authState.isAuthenticated && !hasRedirected.current) {
+    if (!isPending && session?.user && !hasRedirected.current) {
       hasRedirected.current = true
       setIsRedirecting(true)
       router.push('/dashboard')
     }
-  }, [authState.isLoading, authState.isAuthenticated, router])
+  }, [isPending, session?.user, router])
 
-  // Show loading while auth state is resolving
-  if (authState.isLoading) {
+  // Show loading while session is resolving
+  if (isPending) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-surface-50">
         <div className="text-center">
@@ -43,8 +42,8 @@ function SignInForm() {
     )
   }
 
-  // Show redirecting state (controlled by useEffect, not render-time logic)
-  if (isRedirecting || authState.isAuthenticated) {
+  // Show redirecting state
+  if (isRedirecting || session?.user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-surface-50">
         <div className="text-center">
@@ -61,8 +60,28 @@ function SignInForm() {
     setIsLoading(true)
 
     try {
-      await auth.signIn(email, password, isSignUp)
-      // Set redirecting state and let useEffect handle the redirect
+      let result
+
+      if (isSignUp) {
+        // Sign up flow using Better Auth
+        result = await signUp.email({
+          email,
+          password,
+          name: name || email.split('@')[0],
+        })
+      } else {
+        // Sign in flow using Better Auth
+        result = await signIn.email({
+          email,
+          password,
+        })
+      }
+
+      if (result.error) {
+        throw new Error(result.error.message || 'Authentication failed')
+      }
+
+      // Set redirecting state and navigate
       hasRedirected.current = true
       setIsRedirecting(true)
       router.push('/dashboard')
@@ -116,7 +135,7 @@ function SignInForm() {
           {/* Features list */}
           <div className="space-y-4">
             {[
-              'Secure JWT authentication',
+              'Secure authentication',
               'Real-time task updates',
               'Beautiful, responsive design',
             ].map((feature) => (

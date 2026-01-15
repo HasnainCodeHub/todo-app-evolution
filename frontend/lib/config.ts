@@ -5,6 +5,9 @@
 // IMPORTANT: This must match the deployed backend URL
 const PRODUCTION_API_URL = 'https://todo-backend-xi-eosin.vercel.app'
 
+// Production frontend URL
+const PRODUCTION_FRONTEND_URL = 'https://todo-app-evolution-nine.vercel.app'
+
 // API URL getter - ensures the value is read when needed, not at module load
 export function getApiUrl(): string {
   // First priority: explicit environment variable
@@ -22,7 +25,7 @@ export function getApiUrl(): string {
   }
 
   // Server-side production check
-  if (process.env.VERCEL) {
+  if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
     return PRODUCTION_API_URL
   }
 
@@ -32,10 +35,6 @@ export function getApiUrl(): string {
 
 // Auth URL getter
 export function getAuthUrl(): string {
-  if (process.env.BETTER_AUTH_URL) {
-    return process.env.BETTER_AUTH_URL
-  }
-
   // On client-side in production, use current origin
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname
@@ -44,9 +43,9 @@ export function getAuthUrl(): string {
     }
   }
 
-  // Server-side: check for Vercel deployment
-  if (process.env.VERCEL_URL) {
-    return `https://${process.env.VERCEL_URL}`
+  // Server-side: check for production
+  if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+    return PRODUCTION_FRONTEND_URL
   }
 
   return 'http://localhost:3000'
@@ -72,7 +71,7 @@ export const config = {
     if (typeof window !== 'undefined') {
       return window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
     }
-    return !!process.env.VERCEL
+    return !!process.env.VERCEL || process.env.NODE_ENV === 'production'
   },
 } as const
 
