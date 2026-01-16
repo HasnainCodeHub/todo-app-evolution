@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { useSession, signOut } from '../../lib/auth/auth-client'
+import { signOut } from '../../lib/auth/auth-client'
 import { useTasks } from '../../hooks/useTasks'
 import TaskForm from '../../components/tasks/TaskForm'
 import TaskList from '../../components/tasks/TaskList'
@@ -11,6 +11,14 @@ import { TaskListSkeleton, StatCardSkeleton } from '../../components/ui/Skeleton
 
 // Token storage key for backend API calls
 const TOKEN_STORAGE_KEY = 'todo_auth_token'
+const USER_STORAGE_KEY = 'todo_auth_user'
+
+// User type
+interface User {
+  id: string
+  email: string
+  name?: string
+}
 
 // Progress ring component
 function ProgressRing({ progress, size = 80, strokeWidth = 8 }: { progress: number; size?: number; strokeWidth?: number }) {
@@ -21,7 +29,6 @@ function ProgressRing({ progress, size = 80, strokeWidth = 8 }: { progress: numb
   return (
     <div className="relative" style={{ width: size, height: size }}>
       <svg className="transform -rotate-90" width={size} height={size}>
-        {/* Background circle */}
         <circle
           className="text-surface-100"
           strokeWidth={strokeWidth}
@@ -31,7 +38,6 @@ function ProgressRing({ progress, size = 80, strokeWidth = 8 }: { progress: numb
           cx={size / 2}
           cy={size / 2}
         />
-        {/* Progress circle */}
         <circle
           className="text-primary-500 transition-all duration-700 ease-out"
           strokeWidth={strokeWidth}
@@ -63,93 +69,99 @@ type FilterType = 'all' | 'pending' | 'completed'
 
 export default function DashboardPage() {
   const router = useRouter()
-  const { data: session, isPending } = useSession()
   const tasks = useTasks()
   const [mounted, setMounted] = useState(false)
   const [filter, setFilter] = useState<FilterType>('all')
-  const [showWelcome, setShowWelcome] = useState(true)
-  const hasRedirected = useRef(false)
+  const [user, setUser] = useState<User | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
   const hasInitialized = useRef(false)
 
   useEffect(() => {
     setMounted(true)
-    // Hide welcome message after a delay
-    const timer = setTimeout(() => setShowWelcome(false), 5000)
-    return () => clearTimeout(timer)
   }, [])
 
-  // Redirect to signin if not authenticated (only after session resolves)
-  useEffect(() => {
-    if (!isPending && !session?.user && !hasRedirected.current) {
-      hasRedirected.current = true
-      router.push('/signin')
-    }
-  }, [isPending, session?.user, router])
-
-  // Initialize JWT token for backend API calls when session is available
-  const initializeToken = useCallback(async () => {
-    if (hasInitialized.current || !session?.user) return
+  // Initialize session and fetch JWT token
+  const initializeSession = useCallback(async () => {
+    if (hasInitialized.current) return
     hasInitialized.current = true
 
     try {
-      // Fetch JWT token for backend API calls
+      // Check for existing token and user in localStorage first
+      const storedToken = localStorage.getItem(TOKEN_STORAGE_KEY)
+      const storedUser = localStorage.getItem(USER_STORAGE_KEY)
+
+      if (storedToken && storedUser) {
+        // Use stored data immediately
+        setUser(JSON.parse(storedUser))
+        setIsLoading(false)
+        // Refresh tasks
+        tasks.refresh()
+        return
+      }
+
+      // No stored session, try to get JWT from Better Auth session
       const jwtResponse = await fetch('/api/auth/jwt', {
         credentials: 'include',
       })
+
       if (jwtResponse.ok) {
         const jwtData = await jwtResponse.json()
-        if (jwtData.token) {
+        if (jwtData.token && jwtData.user) {
+          // Store token and user
           localStorage.setItem(TOKEN_STORAGE_KEY, jwtData.token)
-          // Refresh tasks after token is set
+          localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(jwtData.user))
+          setUser(jwtData.user)
+          setIsLoading(false)
+          // Refresh tasks
           tasks.refresh()
+          return
         }
       }
-    } catch (error) {
-      console.error('Failed to initialize token:', error)
-    }
-  }, [session?.user, tasks])
 
-  // Load tasks when session is authenticated
-  useEffect(() => {
-    if (session?.user) {
-      initializeToken()
+      // No valid session - redirect to signin
+      router.push('/signin')
+    } catch (error) {
+      console.error('Session initialization failed:', error)
+      router.push('/signin')
     }
-  }, [session?.user, initializeToken])
+  }, [router, tasks])
+
+  // Initialize on mount
+  useEffect(() => {
+    initializeSession()
+  }, [initializeSession])
 
   const handleSignOut = async () => {
-    // Clear local token
+    // Clear local storage
     localStorage.removeItem(TOKEN_STORAGE_KEY)
-    localStorage.removeItem('todo_auth_user')
+    localStorage.removeItem(USER_STORAGE_KEY)
 
     // Sign out from Better Auth
-    await signOut()
+    try {
+      await signOut()
+    } catch (e) {
+      // Ignore signOut errors
+    }
 
     // Navigate to home
     router.push('/')
   }
 
-  // Show loading state while session is resolving
-  if (isPending) {
+  // Show loading state
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-surface-50 via-white to-surface-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-200 border-t-blue-600 mx-auto mb-4"></div>
-          <p className="text-surface-600">Loading...</p>
+          <p className="text-surface-600">Loading dashboard...</p>
         </div>
       </div>
     )
   }
 
-  // Show redirecting state for unauthenticated users
-  if (!session?.user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-surface-50 via-white to-surface-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-200 border-t-blue-600 mx-auto mb-4"></div>
-          <p className="text-surface-600">Redirecting to sign in...</p>
-        </div>
-      </div>
-    )
+  // Should not happen, but handle no user state
+  if (!user) {
+    return null
   }
 
   // Calculate task stats
@@ -172,9 +184,6 @@ export default function DashboardPage() {
     if (hour < 18) return 'Good afternoon'
     return 'Good evening'
   }
-
-  // Get user info from session
-  const user = session.user
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-surface-50 via-white to-surface-50">

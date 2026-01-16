@@ -28,6 +28,7 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         "https://frontend-gamma-three-88.vercel.app",  # Vercel frontend production
         "https://todo-backend-xi-eosin.vercel.app",  # Backend itself (for health checks)
+        "https://todo-app-evolution-nine.vercel.app"
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
